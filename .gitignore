@@ -1,7 +1,3 @@
 test_auth
 test_input_form.csv
-helloworld.py
-fieldmap_etl.py
-fieldmap_etl_v2.py
-fieldmap_etl_v3.py
-fieldmap_etl_v4.py
+misc/
