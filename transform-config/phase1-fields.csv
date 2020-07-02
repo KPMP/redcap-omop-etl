@@ -1,0 +1,11 @@
+event,form,field,notes
+screening_arm_1,new_participant,sc_disease_type,radio button
+screening_arm_1,new_participant,np_race,checkbox example
+screening_arm_1,new_participant,new_participant_complete,form completion
+screening_arm_1,consent,consent,radio
+screening_arm_1,consent,consent_complete,consent complete
+biopsy_suite_arm_1,kidney_biopsy_procedure_details,bp_kit_type,radio
+biopsy_suite_arm_1,kidney_biopsy_procedure_details,bp_kit_nbr_a,dropdown
+biopsy_suite_arm_1,kidney_biopsy_procedure_details,bp_kit_nbr_b,dropdown
+24_hour_followup_arm_1,hour_participant_followup,pfu_24hr_yn,bonus followup field
+
