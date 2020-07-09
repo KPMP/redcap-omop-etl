@@ -1,11 +1,14 @@
 import requests
 import re
 import sys
+import json
 import datetime
 import pandas as pd
 import numpy as np
 import argparse
 import configparser
+
+from dcc_transforms import TestCalcVariableTransform, TestRandomSecondaryIDTransform
 
 class REDCapETL(object):
 
@@ -27,6 +30,10 @@ class REDCapETL(object):
             raise Exception("Must provide a redcap api token in your config [redcap]api_token")
 
         self.calculated_field_events = set()
+        self.transform_records = []
+        self.unique_fields = set()
+        self.filtered_metadata_list = []
+        self.transform_metadata = dict()
     
 
     def get_records(self):
@@ -90,31 +97,49 @@ class REDCapETL(object):
         self.project_info = redcap_api_result.json()
         self.redcap_project_id = self.project_info.get('project_id')
     
+    def filtered_metadata(self):
+
+        if not self.filtered_metadata_list:
+            for md in self.metadata:
+                if md.get('field_name') in self.unique_fields:
+                    self.filtered_metadata_list.append(md)
+
+        return self.filtered_metadata_list
+
     def transmit(self):
 
         result = dict(
-            records=self.records,
+            redcap_records=self.records,
+            transform_records=self.transform_records,
             redcap_project_id=self.redcap_project_id,
-            extraction_run_datetime=datetime.datetime.now()
+            extraction_run_datetime=datetime.datetime.now().isoformat()
             )
         
         include_metadata = self.config.getboolean('redcap','include_metadata', fallback=False)
         if include_metadata:
-            result['metadata'] = self.metadata
+            result['redcap_metadata_filtered'] = self.filtered_metadata()
+            result['transform_metadata'] = self.transform_metadata
         
+        json_result = json.dumps(result)
+
         if self.args.fake:
-            print(f'TRANSMIT: {result}')
+            print(f'TRANSMIT: {json_result}')
         else:
             try:
-                api_endpoint = self.config.get('datalake','endpoint')
-                api_token = self.config.get('datalake','token')
+                api_endpoint = self.config.get('datalake','api_endpoint')
+                api_token = self.config.get('datalake','api_token')
             except Exception as e:
                 raise SystemExit(e)
 
-            r = requests.post(url = api_endpoint, data = result, headers={'x-api-token': api_token})
+            r = requests.post(url = api_endpoint, json = result, headers={'x-api-token': api_token})
+            print(r.json())
+            #r = True
 
             if not r:
-                raise f"Failed to transmit data {r}"
+                raise Exception(f"Failed to transmit data {r} to {api_endpoint}")
+            else:
+                print(f'successfull posted to {api_endpoint}')
+            
 
 
     def filter_phi(self):
@@ -132,13 +157,27 @@ class REDCapETL(object):
             field_name = rec['field_name']
             ef_tup = (event_name, field_name)
             if ef_tup in nonphi_fields_dict or event_name in self.calculated_field_events:
+                self.unique_fields.add(field_name)
                 new_records.append(rec)
         self.records = new_records
 
     def do_transforms(self):
-        pass
+        t1 = TestRandomSecondaryIDTransform(self)
+        if t1:
+            t1.process_records()
+            self.transform_records.extend(t1.get_transform_records())
+            self.transform_metadata[t1.data_namespace] = t1.get_transform_metadata()
+        
+        t2 = TestCalcVariableTransform(self)
+        if t2:
+            t2.process_records()
+            self.transform_records.extend(t2.get_transform_records())
+            self.transform_metadata[t2.data_namespace] = t2.get_transform_metadata()
+
+        #self.transform_records.extend(TestCalcVariableTransform().process_records(self))
 
 
+        
     def run(self):
         self.init()
         self.get_project_info()
@@ -152,6 +191,8 @@ class REDCapETL(object):
         self.filter_phi()
 
         self.transmit()
+
+
 
 def main():
     etl = REDCapETL()
