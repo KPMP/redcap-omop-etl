@@ -29,7 +29,6 @@ class REDCapETL(object):
         if self.redcap_api_token is None or self.redcap_api_token == '':
             raise Exception("Must provide a redcap api token in your config [redcap]api_token")
 
-        self.calculated_field_events = set()
         self.transform_records = []
         self.unique_fields = set()
         self.filtered_metadata_list = []
@@ -71,8 +70,51 @@ class REDCapETL(object):
             print(f'redcap response: {response}')
 
         self.records = response.json()
+
+        # REDCap currently wont send redcap_data_access_group
+        # for EAV record types. Have to pull down and patch in
+        self.patch_dag()
+
         if self.args.debug:
             print(f'records: {self.records}')
+
+    def patch_dag(self):
+
+        print('PATCH DAG ENTER')
+        api_filter = self.config.get('redcap','api_filter', fallback=None)
+        redcap_request_args = \
+            {
+                'token': self.redcap_api_token,
+                'content': 'record',
+                'format': 'json',
+                'type': 'flat',
+                'fields': ['study_id'],
+                'events': ['screening_arm_1'],
+                'exportDataAccessGroups': 'true',
+                'returnFormat': 'json',
+                'filterLogic': api_filter
+            }
+
+        try:
+            response = requests.post(self.redcap_api_url, data=redcap_request_args)
+        except requests.exceptions.RequestException as e:  
+            raise SystemExit(e)
+
+        dag_records = response.json()
+
+        # stuff dag in as additional field in eav
+        for rec in dag_records:
+            self.records.append(
+                dict(
+                    record=rec.get('study_id'), 
+                    redcap_event_name=rec.get('redcap_event_name'), 
+                    redcap_repeat_instance="", 
+                    redcap_repeat_instrument="", 
+                    field_name='redcap_data_access_group', 
+                    value=rec.get('redcap_data_access_group')
+                    ))
+            # example eav export row that we are mimicking
+            #{"record": "1-4", "redcap_event_name": "biopsy_suite_arm_1", "redcap_repeat_instrument": "", "redcap_repeat_instance": "", "field_name": "bp_kit_nbr_a", "value": "KL-0013065"}
 
     def get_metadata(self):
         
@@ -156,7 +198,8 @@ class REDCapETL(object):
             event_name = rec['redcap_event_name']
             field_name = rec['field_name']
             ef_tup = (event_name, field_name)
-            if ef_tup in nonphi_fields_dict or event_name in self.calculated_field_events:
+            # more dag patch here
+            if ef_tup in nonphi_fields_dict or field_name == 'redcap_data_access_group':
                 self.unique_fields.add(field_name)
                 new_records.append(rec)
         self.records = new_records
