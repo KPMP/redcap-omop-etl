@@ -1,3 +1,5 @@
+import pandas as pd
+import numpy as np
 from transform import REDCapETLTransform
 
 class TestCalcVariableTransform(REDCapETLTransform):
@@ -20,6 +22,75 @@ class TestCalcVariableTransform(REDCapETLTransform):
     def get_transform_metadata(self):
         return [dict(field_name='calc_var_1', description='fake var 1'), dict(field_name='calc_var_2', description='fake var 2')]
 
+class CalcVariableTransform(REDCapETLTransform):
+    data_namespace = 'CalcVars'
+
+    def __init__(self, etl):
+        super().__init__(etl)
+        self.deid_data = pd.read_csv(self.etl.config.get('dcc_transforms','deid_data_file'))
+        self.deid_data.fillna('', inplace=True)
+        self.deid_data.set_index('exp_part_uniq_id', inplace=True)
+        #print(self.deid_data)
+        
+    def process_records(self):
+        seen_record_ids = set()
+
+        for record in self.etl.records:
+            record_id = record.get('record')
+            if record_id not in seen_record_ids:
+                
+                seen_record_ids.add(record_id)
+
+                secondary_id = self.etl.secondary_id_map.get(record_id)
+                # if not secondary_id:
+                #     print(f'no secondary_id for {record_id}')
+                # else:
+                #     print(f'got secondary_id {secondary_id} for {record_id}')
+                if secondary_id in self.deid_data.index:
+                    rec_deid_data = self.deid_data.loc[secondary_id]
+                    for fk in rec_deid_data.keys():
+                        fk_value = rec_deid_data[fk]
+                        
+                        self.add_transform_record(record_id, fk, fk_value)
+
+        return True
+
+    def get_transform_metadata(self):
+        self.deid_data_dictionary = pd.read_csv(self.etl.config.get('dcc_transforms','deid_data_dictionary_file'))
+        self.deid_data_dictionary.fillna('', inplace=True)
+
+        return self.deid_data_dictionary.to_dict(orient='records')
+        #[dict(field_name='calc_var_1', description='fake var 1'), dict(field_name='calc_var_2', description='fake var 2')]
+
+
+
+class InterimSecondaryIDTransform(REDCapETLTransform):
+    data_namespace = 'SecondaryID'
+    def __init__(self, etl):
+        super().__init__(etl)
+        secondary_id_mapping = pd.read_csv(self.etl.config.get('dcc_transforms','secondary_id_file'))
+        self.mapping_dict = secondary_id_mapping.set_index(['redcap_record_id'])['secondary_id'].to_dict()
+        
+    
+    def get_secondary_id(self, record_id):
+        sec_id = self.mapping_dict.get(record_id)
+        return sec_id
+
+    def process_records(self):
+
+        seen_record_ids = set()
+        for record in self.etl.records:
+            record_id = record.get('record')
+            if record_id not in seen_record_ids:
+                secondary_id = self.get_secondary_id(record_id)
+                seen_record_ids.add(record_id)
+                self.add_transform_record(record_id, 'secondary_id', secondary_id)
+                self.etl.secondary_id_map[record_id] = secondary_id
+
+        return True
+
+    def get_transform_metadata(self):
+        return [dict(field_name='secondary_id', description='Secondary unique identifier for use in public data set')]
 
 class TestRandomSecondaryIDTransform(REDCapETLTransform):
     data_namespace = 'SecondaryID'

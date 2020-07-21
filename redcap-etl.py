@@ -7,8 +7,7 @@ import pandas as pd
 import numpy as np
 import argparse
 import configparser
-
-from dcc_transforms import TestCalcVariableTransform, TestRandomSecondaryIDTransform
+import dcc_transforms as dt
 
 class REDCapETL(object):
 
@@ -20,7 +19,7 @@ class REDCapETL(object):
         
         self.args = parser.parse_args()
 
-        self.config = configparser.ConfigParser()
+        self.config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
         self.config.read(self.args.config_file)
 
         self.redcap_api_url = self.config.get('redcap','api_url')
@@ -33,6 +32,8 @@ class REDCapETL(object):
         self.unique_fields = set()
         self.filtered_metadata_list = []
         self.transform_metadata = dict()
+
+        self.secondary_id_map = dict()
     
 
     def get_records(self):
@@ -80,7 +81,6 @@ class REDCapETL(object):
 
     def patch_dag(self):
 
-        print('PATCH DAG ENTER')
         api_filter = self.config.get('redcap','api_filter', fallback=None)
         redcap_request_args = \
             {
@@ -163,6 +163,7 @@ class REDCapETL(object):
             result['transform_metadata'] = self.transform_metadata
         
         json_result = json.dumps(result)
+        print(result)
 
         if self.args.fake:
             print(f'TRANSMIT: {json_result}')
@@ -205,13 +206,13 @@ class REDCapETL(object):
         self.records = new_records
 
     def do_transforms(self):
-        t1 = TestRandomSecondaryIDTransform(self)
+        t1 = dt.InterimSecondaryIDTransform(self)
         if t1:
             t1.process_records()
             self.transform_records.extend(t1.get_transform_records())
             self.transform_metadata[t1.data_namespace] = t1.get_transform_metadata()
         
-        t2 = TestCalcVariableTransform(self)
+        t2 = dt.CalcVariableTransform(self)
         if t2:
             t2.process_records()
             self.transform_records.extend(t2.get_transform_records())
