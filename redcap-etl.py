@@ -206,6 +206,13 @@ class REDCapETL(object):
         self.records = new_records
 
     def do_transforms(self):
+        
+        test = dt.DateVariableTransform(self)
+        if test:
+            test.process_records()
+            self.transform_records.extend(test.get_transform_records())
+            self.transform_metadata[test.data_namespace] = test.get_transform_metadata()
+
         t1 = dt.InterimSecondaryIDTransform(self)
         if t1:
             t1.process_records()

@@ -1,6 +1,76 @@
 import pandas as pd
 import numpy as np
+import dateutil
+import datetime
 from transform import REDCapETLTransform
+
+
+class DateVariableTransform(REDCapETLTransform):
+    data_namespace = 'TransformedDate'
+
+    def __init__(self, etl):
+        super().__init__(etl)
+        transformdate_status_list = ['TransformDateYear', 'TransformDate', 'TransformDateTimeSeconds',
+                                     'TransformDateTime']
+        transformdate_field = pd.read_csv(self.etl.config.get('dcc_transforms', 'datetransform_fields_file'))
+        self.transformdate_dict = transformdate_field[transformdate_field.status.isin(transformdate_status_list)]\
+                                .set_index(['field_name'])\
+                                .status.to_dict()
+        #transformdate_field.groupby(['status']).field_name.apply(set).to_dict()['TransformDate']
+        #transformdate_field[transformdate_field.status.isin(['TransformDateYear', 'TransformDate', 'TransformDateTimeSeconds', 'TransformDateTime'])].groupby(['status']).field_name.apply(set).to_dict()
+
+    def process_records(self):
+        if self.etl.config.get('dcc_transforms', 'datetransform_type') == 'total_seconds':
+            standarddate = dateutil.parser.isoparse(self.etl.config.get('dcc_transforms', 'standard_date'))
+            for record in self.etl.records:
+                field_name = record.get('field_name')
+                if self.transformdate_dict.get(field_name):
+                    originaldate = dateutil.parser.isoparse(record.get('value'))
+                    transformeddate = int((standarddate - originaldate).total_seconds())
+                    record_id = record.get('record')
+                    self.add_transform_record(record_id=record_id, field_name=field_name, field_value=transformeddate)
+
+        elif self.etl.config.get('dcc_transforms', 'datetransform_type') == 'date_shifting':
+            shiftingseconds = datetime.timedelta(seconds=int(self.etl.config.get('dcc_transforms', 'shifting_seconds')))
+            for record in self.etl.records:
+                field_name = record.get('field_name')
+                if self.transformdate_dict.get(field_name):
+                    date_type = self.transformdate_dict.get(field_name)
+                    originaldate = dateutil.parser.isoparse(record.get('value'))
+                    transformeddate = originaldate + shiftingseconds
+                    record_id = record.get('record')
+                    if date_type == 'TransformDate':
+                        self.add_transform_record(record_id=record_id,
+                                                  field_name=field_name,
+                                                  field_value=transformeddate.date().isoformat())
+                    elif date_type == 'TransformDateTime':
+                        self.add_transform_record(record_id=record_id,
+                                                  field_name=field_name,
+                                                  field_value=transformeddate.date().isoformat()
+                                                              + ' '
+                                                              + transformeddate.time().isoformat()[:-3])
+                    elif date_type == 'TransformDateTimeSeconds':
+                        self.add_transform_record(record_id=record_id,
+                                                  field_name=field_name,
+                                                  field_value=transformeddate.date().isoformat()
+                                                              + ' '
+                                                              + transformeddate.time().isoformat())
+                    elif date_type == 'TransformDateYear':
+                        self.add_transform_record(record_id=record_id,
+                                                  field_name=field_name,
+                                                  field_value=transformeddate.date().isoformat()[:4])
+                else:
+                    continue
+
+        else:
+            raise NameError('Please enter a valid date transformation method.')
+
+    def get_transform_metadata(self):
+        if self.etl.config.get('dcc_transforms', 'datetransform_type') == 'total_seconds':
+            return [{'field_name': x[0], 'granularity': x[1][9:]} for x in self.transformdate_dict.items()]
+        else:
+            pass
+
 
 class TestCalcVariableTransform(REDCapETLTransform):
     data_namespace = 'CalcVars'
@@ -21,6 +91,7 @@ class TestCalcVariableTransform(REDCapETLTransform):
 
     def get_transform_metadata(self):
         return [dict(field_name='calc_var_1', description='fake var 1'), dict(field_name='calc_var_2', description='fake var 2')]
+
 
 class CalcVariableTransform(REDCapETLTransform):
     data_namespace = 'CalcVars'
@@ -56,16 +127,16 @@ class CalcVariableTransform(REDCapETLTransform):
         return True
 
     def get_transform_metadata(self):
-        self.deid_data_dictionary = pd.read_csv(self.etl.config.get('dcc_transforms','deid_data_dictionary_file'))
+        self.deid_data_dictionary = pd.read_csv(self.etl.config.get('dcc_transforms', 'deid_data_dictionary_file'))
         self.deid_data_dictionary.fillna('', inplace=True)
 
         return self.deid_data_dictionary.to_dict(orient='records')
         #[dict(field_name='calc_var_1', description='fake var 1'), dict(field_name='calc_var_2', description='fake var 2')]
 
 
-
 class InterimSecondaryIDTransform(REDCapETLTransform):
     data_namespace = 'SecondaryID'
+
     def __init__(self, etl):
         super().__init__(etl)
         secondary_id_mapping = pd.read_csv(self.etl.config.get('dcc_transforms','secondary_id_file'))
@@ -91,6 +162,7 @@ class InterimSecondaryIDTransform(REDCapETLTransform):
 
     def get_transform_metadata(self):
         return [dict(field_name='secondary_id', description='Secondary unique identifier for use in public data set')]
+
 
 class TestRandomSecondaryIDTransform(REDCapETLTransform):
     data_namespace = 'SecondaryID'
