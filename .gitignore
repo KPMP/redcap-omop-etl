@@ -1,3 +1,4 @@
 test_auth
 test_input_form.csv
+redcap-etl_test.py
 misc/

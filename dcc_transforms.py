@@ -98,7 +98,7 @@ class CalcVariableTransform(REDCapETLTransform):
 
     def __init__(self, etl):
         super().__init__(etl)
-        self.deid_data = pd.read_csv(self.etl.config.get('dcc_transforms','deid_data_file'))
+        self.deid_data = pd.read_csv(self.etl.config.get('dcc_transforms', 'deid_data_file'))
         self.deid_data.fillna('', inplace=True)
         self.deid_data.set_index('exp_part_uniq_id', inplace=True)
         #print(self.deid_data)

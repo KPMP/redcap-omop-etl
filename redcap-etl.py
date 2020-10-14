@@ -206,7 +206,7 @@ class REDCapETL(object):
         self.records = new_records
 
     def do_transforms(self):
-        
+
         test = dt.DateVariableTransform(self)
         if test:
             test.process_records()
