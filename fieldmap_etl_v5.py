@@ -54,3 +54,26 @@ def etl(form_event_map, form_field_map):
 extraction_df = etl(form_event_dict, form_field_dict)
 extraction_df.to_csv(sys.argv[3])
 
+import requests
+import pandas as pd
+url = 'https://redcap.kpmp.org/api/'
+
+data_event = \
+    {
+        'token': '684B41B10F8C0299725C18757A5B82C5',
+        'content': 'record',
+        'format': 'json',
+        'type': 'flat',
+        'fields': ['study_id'],
+        'forms': 'new_participant',
+        'events': 'screening_arm_1',
+        'rawOrLabel': 'raw',
+        'rawOrLabelHeaders': 'raw',
+        'exportCheckboxLabel': 'true',
+        'exportSurveyFields': 'false',
+        'exportDataAccessGroups': 'true',
+        'returnFormat': 'json',
+    }
+response = requests.post(url, data=data_event)
+# header = response.headers
+df = pd.json_normalize(response.json())

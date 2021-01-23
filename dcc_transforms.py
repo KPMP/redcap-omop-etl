@@ -20,7 +20,40 @@ class DateVariableTransform(REDCapETLTransform):
         #transformdate_field[transformdate_field.status.isin(['TransformDateYear', 'TransformDate', 'TransformDateTimeSeconds', 'TransformDateTime'])].groupby(['status']).field_name.apply(set).to_dict()
 
     def process_records(self):
-        if self.etl.config.get('dcc_transforms', 'datetransform_type') == 'total_seconds':
+        if self.etl.config.get('dcc_transforms', 'datetransform_type') == 'dob_shifting':
+            anchor_date = dateutil.parser.isoparse(self.etl.config.get('dcc_transforms', 'standard_date'))
+            shift_dict = {record['record']: anchor_date - dateutil.parser.isoparse(record['value'])
+                          for record in self.etl.records if record['field_name'] == 'np_dob'}
+            for record in self.etl.records:
+                field_name = record.get('field_name')
+                if self.transformdate_dict.get(field_name):
+                    date_type = self.transformdate_dict.get(field_name)
+                    originaldate = dateutil.parser.isoparse(record.get('value'))
+                    record_id = record.get('record')
+                    transformeddate = originaldate + shift_dict[record_id]
+                    if date_type == 'TransformDate':
+                        self.add_transform_record(record_id=record_id,
+                                                  field_name=field_name,
+                                                  field_value=transformeddate.date().isoformat())
+                    elif date_type == 'TransformDateTime':
+                        self.add_transform_record(record_id=record_id,
+                                                  field_name=field_name,
+                                                  field_value=transformeddate.date().isoformat()
+                                                              + ' '
+                                                              + transformeddate.time().isoformat()[:-3])
+                    elif date_type == 'TransformDateTimeSeconds':
+                        self.add_transform_record(record_id=record_id,
+                                                  field_name=field_name,
+                                                  field_value=transformeddate.date().isoformat()
+                                                              + ' '
+                                                              + transformeddate.time().isoformat())
+                    elif date_type == 'TransformDateYear':
+                        self.add_transform_record(record_id=record_id,
+                                                  field_name=field_name,
+                                                  field_value=transformeddate.date().isoformat()[:4])
+                else:
+                    continue
+        elif self.etl.config.get('dcc_transforms', 'datetransform_type') == 'total_seconds':
             standarddate = dateutil.parser.isoparse(self.etl.config.get('dcc_transforms', 'standard_date'))
             for record in self.etl.records:
                 field_name = record.get('field_name')
