@@ -4,7 +4,6 @@ import dateutil
 import datetime
 from transform import REDCapETLTransform
 
-
 class DateVariableTransform(REDCapETLTransform):
     data_namespace = 'TransformedDate'
 
@@ -12,7 +11,9 @@ class DateVariableTransform(REDCapETLTransform):
         super().__init__(etl)
         transformdate_status_list = ['TransformDateYear', 'TransformDate', 'TransformDateTimeSeconds',
                                      'TransformDateTime']
-        transformdate_field = pd.read_csv(self.etl.config.get('dcc_transforms', 'datetransform_fields_file'))
+        #transformdate_field = pd.read_csv(self.etl.config.get('dcc_transforms', 'datetransform_fields_file'))
+        transformdate_field = self.etl.field_map.copy()
+
         self.transformdate_dict = transformdate_field[transformdate_field.status.isin(transformdate_status_list)]\
                                 .set_index(['field_name'])\
                                 .status.to_dict()
@@ -20,6 +21,7 @@ class DateVariableTransform(REDCapETLTransform):
         #transformdate_field[transformdate_field.status.isin(['TransformDateYear', 'TransformDate', 'TransformDateTimeSeconds', 'TransformDateTime'])].groupby(['status']).field_name.apply(set).to_dict()
 
     def process_records(self):
+        transform_in_place = self.etl.config.getboolean('dcc_transforms', 'dob_shift_inplace', fallback=False)
         if self.etl.config.get('dcc_transforms', 'datetransform_type') == 'dob_shifting':
             anchor_date = dateutil.parser.isoparse(self.etl.config.get('dcc_transforms', 'standard_date'))
             shift_dict = {record['record']: anchor_date - dateutil.parser.isoparse(record['value'])
@@ -31,26 +33,34 @@ class DateVariableTransform(REDCapETLTransform):
                     originaldate = dateutil.parser.isoparse(record.get('value'))
                     record_id = record.get('record')
                     transformeddate = originaldate + shift_dict[record_id]
+                    # TODO - need to either add the rest of the data elements in record to these transforms 
+                    # OR transform the value in place and add a note that this occurred (my pref)
+                    # we could then flag the record as transformed and capture any datelike 
+                    # data that has not been transformed in the phi filter
+                    transformed_date = None
+
                     if date_type == 'TransformDate':
-                        self.add_transform_record(record_id=record_id,
-                                                  field_name=field_name,
-                                                  field_value=transformeddate.date().isoformat())
+                        transformed_date = transformeddate.date().isoformat()
                     elif date_type == 'TransformDateTime':
-                        self.add_transform_record(record_id=record_id,
-                                                  field_name=field_name,
-                                                  field_value=transformeddate.date().isoformat()
-                                                              + ' '
-                                                              + transformeddate.time().isoformat()[:-3])
+                        transformed_date = transformeddate.date().isoformat()\
+                                                              + ' '\
+                                                              + transformeddate.time().isoformat()[:-3]
                     elif date_type == 'TransformDateTimeSeconds':
-                        self.add_transform_record(record_id=record_id,
-                                                  field_name=field_name,
-                                                  field_value=transformeddate.date().isoformat()
-                                                              + ' '
-                                                              + transformeddate.time().isoformat())
+                        transformed_date = transformeddate.date().isoformat()\
+                                                              + ' '\
+                                                              + transformeddate.time().isoformat()
                     elif date_type == 'TransformDateYear':
-                        self.add_transform_record(record_id=record_id,
-                                                  field_name=field_name,
-                                                  field_value=transformeddate.date().isoformat()[:4])
+                        transformed_date = transformeddate.date().isoformat()[:4]
+                    
+                    if transformed_date:
+                        if transform_in_place:
+                            record['value'] = transformed_date
+                            record['kpmp_date_cleaned'] = True
+                        else:
+                            self.add_transform_record(record_id=record_id,
+                                                    field_name=field_name,
+                                                    field_value=transformed_date)
+
                 else:
                     continue
         elif self.etl.config.get('dcc_transforms', 'datetransform_type') == 'total_seconds':
