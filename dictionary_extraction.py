@@ -44,15 +44,27 @@ def dict_extract(existing_df):
     response = requests.post(url, data=data_event)
     # header = response.headers
     df = pd.json_normalize(response.json())
+    
     extraction_df = pd.concat([extraction_df, df])
     extraction_df = extraction_df.drop(columns=list(set(init_columns) - set(keep_columns)))
     
     extraction_df = pd.concat([extraction_df, addition_df], axis=1)
     extraction_df = extraction_df[column_order]
-
+    print(extraction_df)
+    print(existing_df)
+    
     # copy in data from existing df that is in the addition column list (Status, etc)
-    if existing_df:
-        extraction_df[addition_columns] = existing_df[existing_df['field_name'] == extraction_df['field_name']][addition_columns]
+    if not existing_df.empty:
+        extraction_df.set_index('field_name', inplace=True)
+        min_existing = existing_df[['field_name','status','notes','restrict_to_event_list','ontology_term']].copy()
+        min_existing.set_index('field_name', inplace=True)
+
+        extraction_df.update(min_existing)
+        extraction_df.reset_index(inplace=True)
+        extraction_df = extraction_df[column_order]
+        #extraction_df[addition_columns] = existing_df[existing_df['field_name'] == extraction_df['field_name']][addition_columns]
+        #extraction_df = pd.merge(extraction_df, existing_df, how='left', on=['field_name'])
+    print(extraction_df)
     
     return extraction_df
 
