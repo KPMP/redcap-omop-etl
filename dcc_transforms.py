@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import dateutil
 import datetime
+import logging
 from transform import REDCapETLTransform
 
 class DateVariableTransform(REDCapETLTransform):
@@ -30,36 +31,52 @@ class DateVariableTransform(REDCapETLTransform):
                 field_name = record.get('field_name')
                 if self.transformdate_dict.get(field_name):
                     date_type = self.transformdate_dict.get(field_name)
-                    originaldate = dateutil.parser.isoparse(record.get('value'))
+                    original_value = record.get('value')
                     record_id = record.get('record')
-                    transformeddate = originaldate + shift_dict[record_id]
-                    # TODO - need to either add the rest of the data elements in record to these transforms 
-                    # OR transform the value in place and add a note that this occurred (my pref)
-                    # we could then flag the record as transformed and capture any datelike 
-                    # data that has not been transformed in the phi filter
-                    transformed_date = None
+                    originaldate = None
+                    try:
+                        originaldate = dateutil.parser.isoparse(original_value)
+                    except ValueError:
+                        logging.error(f'dob_shifting: Failed to parse date: {original_value} record {record_id} field_name: {field_name}')
 
-                    if date_type == 'TransformDate':
-                        transformed_date = transformeddate.date().isoformat()
-                    elif date_type == 'TransformDateTime':
-                        transformed_date = transformeddate.date().isoformat()\
-                                                              + ' '\
-                                                              + transformeddate.time().isoformat()[:-3]
-                    elif date_type == 'TransformDateTimeSeconds':
-                        transformed_date = transformeddate.date().isoformat()\
-                                                              + ' '\
-                                                              + transformeddate.time().isoformat()
-                    elif date_type == 'TransformDateYear':
-                        transformed_date = transformeddate.date().isoformat()[:4]
                     
-                    if transformed_date:
-                        if transform_in_place:
-                            record['value'] = transformed_date
-                            record['kpmp_date_cleaned'] = True
-                        else:
-                            self.add_transform_record(record_id=record_id,
-                                                    field_name=field_name,
-                                                    field_value=transformed_date)
+                    shift_interval = shift_dict.get(record_id)
+                    if not shift_interval:
+                        logging.error(f'dob_shifting: No time shift defined for record {record_id}')
+                    elif not originaldate:
+                        logging.error(f'dob_shifting: Failed to parse date: {original_value}')
+                    else:
+                        transformeddate = originaldate + shift_interval
+                        # TODO - need to either add the rest of the data elements in record to these transforms 
+                        # OR transform the value in place and add a note that this occurred (my pref)
+                        # we could then flag the record as transformed and capture any datelike 
+                        # data that has not been transformed in the phi filter
+                        transformed_date = None
+
+                        if date_type == 'TransformDate':
+                            transformed_date = transformeddate.date().isoformat()
+                        elif date_type == 'TransformDateTime':
+                            transformed_date = transformeddate.date().isoformat()\
+                                                                + ' '\
+                                                                + transformeddate.time().isoformat()[:-3]
+                        elif date_type == 'TransformDateTimeSeconds':
+                            transformed_date = transformeddate.date().isoformat()\
+                                                                + ' '\
+                                                                + transformeddate.time().isoformat()
+                        elif date_type == 'TransformDateYear':
+                            transformed_date = transformeddate.date().isoformat()[:4]
+                        
+                        if transformed_date:
+                            if transform_in_place:
+                                record['value'] = transformed_date
+                                record['kpmp_date_cleaned'] = True
+                                record['kpmp_date_cleaned_type'] = date_type
+                                if field_name == 'np_dob':
+                                    record['kpmp_orig'] = original_value
+                            else:
+                                self.add_transform_record(record_id=record_id,
+                                                        field_name=field_name,
+                                                        field_value=transformed_date)
 
                 else:
                     continue
