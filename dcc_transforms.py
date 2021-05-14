@@ -23,7 +23,8 @@ class DateVariableTransform(REDCapETLTransform):
 
     def process_records(self):
         transform_in_place = self.etl.config.getboolean('dcc_transforms', 'dob_shift_inplace', fallback=False)
-        if self.etl.config.get('dcc_transforms', 'datetransform_type') == 'dob_shifting':
+        datetransform_type = self.etl.config.get('dcc_transforms', 'datetransform_type', fallback=None)
+        if datetransform_type == 'dob_shifting':
             anchor_date = dateutil.parser.isoparse(self.etl.config.get('dcc_transforms', 'standard_date'))
             shift_dict = {record['record']: anchor_date - dateutil.parser.isoparse(record['value'])
                           for record in self.etl.records if record['field_name'] == 'np_dob'}
@@ -71,8 +72,9 @@ class DateVariableTransform(REDCapETLTransform):
                                 record['value'] = transformed_date
                                 record['kpmp_date_cleaned'] = True
                                 record['kpmp_date_cleaned_type'] = date_type
-                                if field_name == 'np_dob':
-                                    record['kpmp_orig'] = original_value
+                                
+                                # debug
+                                # logging.debug(f'dob_shifting: {record_id} field: {field_name} shift: {shift_interval} date_type {date_type} original: {original_value} transformed: {transformed_date}')
                             else:
                                 self.add_transform_record(record_id=record_id,
                                                         field_name=field_name,
@@ -80,7 +82,7 @@ class DateVariableTransform(REDCapETLTransform):
 
                 else:
                     continue
-        elif self.etl.config.get('dcc_transforms', 'datetransform_type') == 'total_seconds':
+        elif datetransform_type == 'total_seconds':
             standarddate = dateutil.parser.isoparse(self.etl.config.get('dcc_transforms', 'standard_date'))
             for record in self.etl.records:
                 field_name = record.get('field_name')
@@ -90,7 +92,7 @@ class DateVariableTransform(REDCapETLTransform):
                     record_id = record.get('record')
                     self.add_transform_record(record_id=record_id, field_name=field_name, field_value=transformeddate)
 
-        elif self.etl.config.get('dcc_transforms', 'datetransform_type') == 'date_shifting':
+        elif datetransform_type == 'date_shifting':
             shiftingseconds = datetime.timedelta(seconds=int(self.etl.config.get('dcc_transforms', 'shifting_seconds')))
             for record in self.etl.records:
                 field_name = record.get('field_name')
@@ -121,12 +123,13 @@ class DateVariableTransform(REDCapETLTransform):
                                                   field_value=transformeddate.date().isoformat()[:4])
                 else:
                     continue
-
+        elif datetransform_type is None:
+            logging.info(f'No datetransform active')
         else:
             raise NameError('Please enter a valid date transformation method.')
 
     def get_transform_metadata(self):
-        if self.etl.config.get('dcc_transforms', 'datetransform_type') == 'total_seconds':
+        if self.etl.config.get('dcc_transforms', 'datetransform_type', fallback=None) == 'total_seconds':
             return [{'field_name': x[0], 'granularity': x[1][9:]} for x in self.transformdate_dict.items()]
         else:
             pass
@@ -137,9 +140,9 @@ class CalcVariableTransform(REDCapETLTransform):
 
     def __init__(self, etl):
         super().__init__(etl)
-        self.deid_data = pd.read_csv(self.etl.config.get('dcc_transforms', 'deid_data_file'))
+        self.deid_data = pd.read_csv(self.etl.config.get('dcc_transforms', 'deid_data_file'), dtype=object)
         self.deid_data.fillna('', inplace=True)
-        self.deid_data.set_index('exp_part_uniq_id', inplace=True)
+        self.deid_data.set_index('redcap_id', inplace=True)
         #print(self.deid_data)
         
     def process_records(self):
@@ -151,13 +154,13 @@ class CalcVariableTransform(REDCapETLTransform):
                 
                 seen_record_ids.add(record_id)
 
-                secondary_id = self.etl.secondary_id_map.get(record_id)
+                #secondary_id = self.etl.secondary_id_map.get(record_id)
                 # if not secondary_id:
                 #     print(f'no secondary_id for {record_id}')
                 # else:
                 #     print(f'got secondary_id {secondary_id} for {record_id}')
-                if secondary_id in self.deid_data.index:
-                    rec_deid_data = self.deid_data.loc[secondary_id]
+                if record_id in self.deid_data.index:
+                    rec_deid_data = self.deid_data.loc[record_id]
                     for fk in rec_deid_data.keys():
                         if fk != 'redcap_id':
                             fk_value = rec_deid_data[fk]

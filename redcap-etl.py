@@ -1,6 +1,7 @@
 import requests
 import re
 import sys
+import csv
 import json
 import datetime
 import pandas as pd
@@ -51,6 +52,7 @@ class REDCapETL(object):
         Pull down all records that conform with the defined api_filter. 
         When using eav, currently exportDataAccessGroups does not work.
         """
+        self.records = []
 
         api_filter = self.config.get('redcap','api_filter', fallback=None)
         
@@ -58,30 +60,61 @@ class REDCapETL(object):
             {
                 'token': self.redcap_api_token,
                 'content': 'record',
-                'format': 'json',
+                'format': 'csv',
                 'type': 'eav',
                 'rawOrLabel': 'raw',
                 'rawOrLabelHeaders': 'raw',
                 'exportCheckboxLabel': 'true',
                 'exportSurveyFields': 'false',
-                'exportDataAccessGroups': 'true',
+                'exportDataAccessGroups': 'false',
                 'returnFormat': 'json',
                 'filterLogic': api_filter
             }
 
         if self.args.debug:
             logging.info(f'redcap export_records args: {redcap_request_args}')
+
+        study_ids = self.get_study_ids()
+
+        def chunks(study_id_list, number_in_chunk):
+            for i in range(0, len(study_id_list), number_in_chunk):
+                yield study_id_list[i:i+number_in_chunk]
+
+        # 30-10929 WTF
+        for record_chunk in chunks(study_ids, 100):
+            logging.info(f'Processing chunk: {record_chunk}')
+            
+            record_redcap_request_args = redcap_request_args.copy()
+            counter = 0
+            for rec_id in record_chunk:
+                record_redcap_request_args[f'records[{counter}]'] = rec_id
+                counter = counter + 1
         
-        try:
-            response = requests.post(self.redcap_api_url, data=redcap_request_args)
-        except requests.exceptions.RequestException as e:  
-            raise SystemExit(e)
+            try:
+                response = requests.post(self.redcap_api_url, data=record_redcap_request_args)
+            except requests.exceptions.RequestException as e:  
+                raise SystemExit(e)
     
-        if self.args.debug:
-            logging.debug(f'redcap response: {response}')
+            if self.args.debug:
+                logging.debug(f'redcap response: {response.content} chunk: {record_chunk}')
 
-        self.records = response.json()
+            
+            #logging.debug(f'OOOOOOOOOOOOOMMMMMMMMMMMMMMMGGGGGGGGGGGGG about to csvread {response.text}')
+            reader = csv.DictReader(response.text.splitlines())
+            recs_list = list(reader)
+            #import pdb; pdb.set_trace()
+            #logging.debug(reader)
+                
+            #logging.debug(recs_list)
+            for rec in recs_list:
+                rec['redcap_event_name'] = rec.pop('event_id')
+                #rec['study_id'] = rec.pop('record')
+                
+            self.records.extend(recs_list)
+            #except Exception as e:
+            #    logging.debug(f'redcap json issues for request {record_redcap_request_args} -- {e} -- {response.content}')
 
+            #break
         # REDCap currently wont send redcap_data_access_group
         # for EAV record types. Have to pull down and patch in
         self.patch_dag()
@@ -89,8 +122,7 @@ class REDCapETL(object):
         if self.args.debug:
             logging.debug(f'records: {self.records}')
 
-    def patch_dag(self):
-
+    def get_study_ids(self):
         api_filter = self.config.get('redcap','api_filter', fallback=None)
         redcap_request_args = \
             {
@@ -110,10 +142,38 @@ class REDCapETL(object):
         except requests.exceptions.RequestException as e:  
             raise SystemExit(e)
 
-        dag_records = response.json()
+        self.dag_records = response.json()
+        study_ids = []
+        for rec in self.dag_records:
+            study_ids.append(rec.get('study_id'))
+        
+        return study_ids
+
+    def patch_dag(self):
+
+        # api_filter = self.config.get('redcap','api_filter', fallback=None)
+        # redcap_request_args = \
+        #     {
+        #         'token': self.redcap_api_token,
+        #         'content': 'record',
+        #         'format': 'json',
+        #         'type': 'flat',
+        #         'fields': ['study_id'],
+        #         'events': ['screening_arm_1'],
+        #         'exportDataAccessGroups': 'true',
+        #         'returnFormat': 'json',
+        #         'filterLogic': api_filter
+        #     }
+
+        # try:
+        #     response = requests.post(self.redcap_api_url, data=redcap_request_args)
+        # except requests.exceptions.RequestException as e:  
+        #     raise SystemExit(e)
+
+        # dag_records = response.json()
 
         # stuff dag in as additional field in eav
-        for rec in dag_records:
+        for rec in self.dag_records:
             self.records.append(
                 dict(
                     record=rec.get('study_id'), 
@@ -174,7 +234,7 @@ class REDCapETL(object):
         if include_metadata:
             result['redcap_metadata_filtered'] = self.filtered_metadata()
             result['transform_metadata'] = self.transform_metadata
-        
+        #ogging.debug(f'RESULT: {result}')
         json_result = json.dumps(result)
 
         if self.args.fake:
@@ -182,11 +242,11 @@ class REDCapETL(object):
         else:
             try:
                 api_endpoint = self.config.get('datalake','api_endpoint')
-                api_token = self.config.get('datalake','api_token')
+                #api_token = self.config.get('datalake','api_token')
             except Exception as e:
                 raise SystemExit(e)
 
-            r = requests.post(url = api_endpoint, json = result, headers={'x-api-token': api_token})
+            r = requests.post(url = api_endpoint, json = result) #, headers={'x-api-token': api_token})
             
 
             if not r:
@@ -194,7 +254,8 @@ class REDCapETL(object):
                 raise Exception(f"Failed to transmit data. Got: {r} to {api_endpoint}")
 
             else:
-                logging.info(f'successfull posted to {api_endpoint} response: {r}')
+                logging.info(f'successfully posted data to {api_endpoint} response: {r}')
+                logging.info(json_result)
             
 
     def load_field_map(self):
