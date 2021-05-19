@@ -223,39 +223,55 @@ class REDCapETL(object):
 
     def transmit(self):
 
-        result = dict(
-            redcap_records=self.records,
-            transform_records=self.transform_records,
-            redcap_project_id=self.redcap_project_id,
-            extraction_run_datetime=datetime.datetime.now().isoformat()
-            )
-        
+        record_chunk_size = 50000
+        record_chunks = [self.records[i:i + record_chunk_size] for i in range(0, len(self.records), record_chunk_size)]
+        chunk_number = 1
+        run_datetime = datetime.datetime.now().isoformat()
         include_metadata = self.config.getboolean('redcap','include_metadata', fallback=False)
-        if include_metadata:
-            result['redcap_metadata_filtered'] = self.filtered_metadata()
-            result['transform_metadata'] = self.transform_metadata
-        #ogging.debug(f'RESULT: {result}')
-        json_result = json.dumps(result)
+        
+        for record_chunk in record_chunks:
+            result = dict(
+                redcap_records=record_chunk,
+                chunk_number=chunk_number,
+                redcap_project_id=self.redcap_project_id,
+                extraction_run_datetime=run_datetime
+            )
+            if chunk_number == 1:
+                result['transform_records'] = self.transform_records
+                if include_metadata:
+                    result['redcap_metadata_filtered'] = self.filtered_metadata()
+                    result['transform_metadata'] = self.transform_metadata
+                
 
-        if self.args.fake:
-            logging.info(f'TRANSMIT: {json_result}')
-        else:
-            try:
-                api_endpoint = self.config.get('datalake','api_endpoint')
-                #api_token = self.config.get('datalake','api_token')
-            except Exception as e:
-                raise SystemExit(e)
+ 
+            json_result = json.dumps(result)
+            json_metadata = json.dumps(result.get('redcap_metadata_filtered'))
+            transform_json = json.dumps(result.get('transform_records'))
+        
+            if self.args.fake:
+                #logging.info(f'TRANSMIT: {json_result}')
+                logging.info(f'Would transmit {chunk_number}. Total size {len(json_result)} metadata: {len(json_metadata)} transform {len(transform_json)}')
+                logging.info(f'Length of records: {len(record_chunk)}')
+            else:
+                try:
+                    api_endpoint = self.config.get('datalake','api_endpoint')
+                    #api_token = self.config.get('datalake','api_token')
+                except Exception as e:
+                    raise SystemExit(e)
 
-            r = requests.post(url = api_endpoint, json = result) #, headers={'x-api-token': api_token})
+                r = requests.post(url = api_endpoint, json = result) #, headers={'x-api-token': api_token})
             
 
-            if not r:
-                logging.error(f"Failed to transmit data. Got: {r} to {api_endpoint}")
-                raise Exception(f"Failed to transmit data. Got: {r} to {api_endpoint}")
+                if not r:
+                    logging.error(f"Failed to transmit data. Got: {r} {r.content} to {api_endpoint}")
+                    raise Exception(f"Failed to transmit data. Got: {r} {r.content} to {api_endpoint}")
 
-            else:
-                logging.info(f'successfully posted data to {api_endpoint} response: {r}')
-                logging.info(json_result)
+                else:
+                    logging.info(f'successfully posted chunk: {chunk_number} data to {api_endpoint} response: {r}')
+                    logging.info(json_result)
+                    logging.info(f'response content: {r.content}')
+
+            chunk_number += 1
             
 
     def load_field_map(self):
