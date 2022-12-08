@@ -339,10 +339,17 @@ class REDCapETL(object):
             else:
                 field_include_status = field_info.get("status")
                 restrict_to_events = field_info.get("restrict_to_event_list")
+
                 if field_include_status and field_include_status == "Include":
-                    if not restrict_to_events or restrict_to_events.get(event_name):
+                    if pd.isna(restrict_to_events) or restrict_to_events.get(
+                        event_name
+                    ):
                         self.unique_fields.add(field_name)
                         new_records.append(rec)
+                    else:
+                        logging.info(
+                            f"restricting event {event_name} for field {field_info}"
+                        )
                 elif field_include_status and field_include_status in [
                     "TransformDateYear",
                     "TransformDate",

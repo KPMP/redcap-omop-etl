@@ -3,6 +3,7 @@ import logging
 
 import dateutil
 import pandas as pd
+import pandera as pa
 
 from transform import REDCapETLTransform
 
@@ -195,6 +196,32 @@ class CalcVariableTransform(REDCapETLTransform):
         )
         self.deid_data.fillna("", inplace=True)
         self.deid_data.set_index("redcap_id", inplace=True)
+
+        # np_gender	exp_age_decade	exp_race	exp_disease_type	mh_diabetes_yn	exp_diabetes_duration
+        # mh_ht_yn	exp_ht_duration	exp_egfr_bl_cat	exp_a1c_cat_most_recent	exp_alb_cat_most_recent
+        # exp_pro_cat_most_recent	exp_has_med_raas	exp_aki_kdigo
+
+        calc_schema = pa.DataFrameSchema(
+            {
+                "np_gender": pa.Column(str),
+                "exp_age_decade": pa.Column(str),
+                "exp_race": pa.Column(str),
+                "exp_disease_type": pa.Column(str),
+                "mh_diabetes_yn": pa.Column(str),
+                "exp_diabetes_duration": pa.Column(str),
+                "mh_ht_yn": pa.Column(str),
+                "exp_ht_duration": pa.Column(str),
+                "exp_egfr_bl_cat": pa.Column(str),
+                "exp_a1c_cat_most_recent": pa.Column(str),
+                "exp_alb_cat_most_recent": pa.Column(str),
+                "exp_pro_cat_most_recent": pa.Column(str),
+                "exp_has_med_raas": pa.Column(str),
+                "exp_aki_kdigo": pa.Column(str),
+            },
+            index=pa.Index(str),
+            strict=True,
+        )
+        calc_schema.validate(self.deid_data)
         # print(self.deid_data)
 
     def process_records(self):
