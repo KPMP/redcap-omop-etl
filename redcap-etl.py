@@ -25,6 +25,7 @@ class REDCapETL(object):
         )
         parser.add_argument("-f", "--fake", dest="fake", action="store_true")
         parser.add_argument("-d", "--debug", dest="debug", action="store_true")
+        parser.add_argument("-p", "--pub-debug", dest="pub_debug", action="store_true")
         parser.add_argument("-w", "--writeout", dest="output_file")
 
         self.args = parser.parse_args()
@@ -39,8 +40,11 @@ class REDCapETL(object):
         self.log_dir = self.config.get("default", "log_dir", fallback=None)
         if self.log_dir:
             datestring = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            fake_string = ""
+            if self.args.fake:
+                fake_string = "fake-run-"
             logging.basicConfig(
-                filename=f"{self.log_dir}/redcap-etl-log-{datestring}.log",
+                filename=f"{self.log_dir}/{fake_string}redcap-etl-log-{datestring}.log",
                 level=logging.DEBUG,
             )
         else:
@@ -235,6 +239,7 @@ class REDCapETL(object):
         if not self.output_file_handle:
             self.output_file_handle = open(self.args.output_file, "x")
         self.output_file_handle.write(json_data)
+        self.output_file_handle.write("\n")
 
     def transmit(self):
 
@@ -389,6 +394,23 @@ class REDCapETL(object):
             self.transform_metadata[t2.data_namespace] = t2.get_transform_metadata()
 
         # self.transform_records.extend(TestCalcVariableTransform().process_records(self))
+    def debug_pub(self):
+        #print(self.transform_records)
+        trans_data = {}
+        for rec in self.transform_records:
+            rec_id = rec.get('record_id')
+            field_name = rec.get('field_name')
+            field_value = rec.get('field_value')
+            if rec_id not in trans_data:
+                trans_data[rec_id] = {}
+                trans_data[rec_id]['record_id'] = rec_id
+            trans_data[rec_id][field_name] = field_value
+        trans_list = []
+        for rec_id, rec_data in trans_data.items():
+            trans_list.append(rec_data)
+        df = pd.DataFrame(trans_list)
+        df.to_csv("debug-public.csv", index=False)
+
 
     def run(self):
         self.init()
@@ -412,6 +434,8 @@ class REDCapETL(object):
         # logging.info(f'post filter phi {len(self.records)}')
 
         self.transmit()
+        if self.args.pub_debug:
+            self.debug_pub()
 
 
 def main():
