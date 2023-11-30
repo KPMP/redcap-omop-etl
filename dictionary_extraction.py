@@ -1,18 +1,9 @@
-import re
 import sys
 
 import pandas as pd
 import requests
 
 url = "https://redcap.kpmp.org/api/"
-
-
-def token_printer(auth_file):
-    auth_regex = re.compile(r"(?<=TOKEN=)[0-9A-Za-z]+")
-    f = open(auth_file, "r")
-    token_line = f.readline()
-    f.close()
-    return auth_regex.search(token_line).group(0)
 
 
 def dict_extract(existing_df):
@@ -46,6 +37,7 @@ def dict_extract(existing_df):
     ]
     addition_columns = [
         "status",
+        "status questions",
         "exclude_reason",
         "notes",
         "ontology_term",
@@ -57,6 +49,7 @@ def dict_extract(existing_df):
         "form_name",
         "field_name",
         "status",
+        "status questions",
         "exclude_reason",
         "notes",
         "field_type",
@@ -76,7 +69,7 @@ def dict_extract(existing_df):
         "returnFormat": "json",
     }
     response = requests.post(url, data=data_event)
-    # header = response.headers
+
     df = pd.json_normalize(response.json())
 
     extraction_df = pd.concat([extraction_df, df])
@@ -86,14 +79,22 @@ def dict_extract(existing_df):
 
     extraction_df = pd.concat([extraction_df, addition_df], axis=1)
     extraction_df = extraction_df[column_order]
-    print(extraction_df)
-    print(existing_df)
 
     # copy in data from existing df that is in the addition column list (Status, etc)
     if existing_df is not None and not existing_df.empty:
+        print("Updating existing df")
         extraction_df.set_index("field_name", inplace=True)
+        if "status questions" not in existing_df.columns:
+            existing_df["status questions"] = ""
         min_existing = existing_df[
-            ["field_name", "status", "notes", "restrict_to_event_list", "ontology_term"]
+            [
+                "field_name",
+                "status",
+                "status questions",
+                "notes",
+                "restrict_to_event_list",
+                "ontology_term",
+            ]
         ].copy()
         min_existing.set_index("field_name", inplace=True)
 
@@ -101,23 +102,15 @@ def dict_extract(existing_df):
         extraction_df.reset_index(inplace=True)
         extraction_df = extraction_df[column_order]
 
-    print(extraction_df)
-
     return extraction_df
 
 
-token = token_printer(sys.argv[1])
-existing_csv = None
-existing_df = None
-try:
-    existing_csv = sys.argv[2]
-except IndexError:
-    pass
-else:
-    try:
-        existing_df = pd.read_csv(existing_csv)
-    except Exception:
-        pass
+# run like
+# python dictionary_extraction.py <token> <existing csv> <new csv>
+token = sys.argv[1]
+existing_csv = sys.argv[2]
+existing_df = pd.read_csv(existing_csv)
+
 
 extraction_dictionary = dict_extract(existing_df)
 extraction_dictionary.to_csv(sys.argv[3], index=False)

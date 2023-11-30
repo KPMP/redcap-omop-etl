@@ -191,46 +191,53 @@ class CalcVariableTransform(REDCapETLTransform):
 
     def __init__(self, etl):
         super().__init__(etl)
-        # FIXME use deid data dictionary keys for this
-        usecols = ["redcap_id"]
+
+        study_id_column_name = self.etl.config.get(
+            "redcap", "study_id_column", fallback="study_id"
+        )
+        print(f"STUDY ID COL: {study_id_column_name}")
+        usecols = [study_id_column_name]
         schema_to_check = None
         common_schema_cols = {
-                "np_gender": pa.Column(str),
-                "exp_age_decade": pa.Column(str),
-                "exp_race": pa.Column(str),
-                "mh_diabetes_yn": pa.Column(str),
-                "exp_diabetes_duration": pa.Column(str),
-                "mh_ht_yn": pa.Column(str),
-                "exp_ht_duration": pa.Column(str)
+            "np_gender": pa.Column(str),
+            "exp_age_decade": pa.Column(str),
+            "exp_race": pa.Column(str),
+            "mh_diabetes_yn": pa.Column(str),
+            "exp_diabetes_duration": pa.Column(str),
+            "mh_ht_yn": pa.Column(str),
+            "exp_ht_duration": pa.Column(str),
         }
         usecols += list(common_schema_cols.keys())
         schema_to_check = common_schema_cols
         main_only_schema_cols = {
-                "exp_disease_type": pa.Column(str),
-                "exp_egfr_bl_cat": pa.Column(str),
-                "exp_a1c_cat_most_recent": pa.Column(str),
-                "exp_alb_cat_most_recent": pa.Column(str),
-                "exp_pro_cat_most_recent": pa.Column(str),
-                "exp_has_med_raas": pa.Column(str),
-                "exp_aki_kdigo": pa.Column(str),
+            "exp_disease_type": pa.Column(str),
+            "exp_egfr_bl_cat": pa.Column(str),
+            "exp_a1c_cat_most_recent": pa.Column(str),
+            "exp_alb_cat_most_recent": pa.Column(str),
+            "exp_pro_cat_most_recent": pa.Column(str),
+            "exp_has_med_raas": pa.Column(str),
+            "exp_aki_kdigo": pa.Column(str),
         }
-        if self.etl.redcap_project_type == 'KPMP_MAIN':
+        if self.etl.redcap_project_type == "KPMP_MAIN":
             usecols += list(main_only_schema_cols.keys())
             schema_to_check.update(main_only_schema_cols)
-        
+
         self.deid_data = pd.read_csv(
             self.etl.config.get("dcc_transforms", "deid_data_file"),
             usecols=usecols,
-            dtype=object
+            dtype=object,
         )
+        if study_id_column_name != "redcap_id":
+            self.deid_data.rename(columns={"study_id": "redcap_id"}, inplace=True)
         self.deid_data.fillna("", inplace=True)
         self.deid_data.set_index("redcap_id", inplace=True)
 
         # np_gender	exp_age_decade	exp_race	exp_disease_type	mh_diabetes_yn	exp_diabetes_duration
         # mh_ht_yn	exp_ht_duration	exp_egfr_bl_cat	exp_a1c_cat_most_recent	exp_alb_cat_most_recent
         # exp_pro_cat_most_recent	exp_has_med_raas	exp_aki_kdigo
-        
-        calc_schema = pa.DataFrameSchema(schema_to_check,
+
+        calc_schema = pa.DataFrameSchema(
+            schema_to_check,
             index=pa.Index(str),
             strict=True,
         )

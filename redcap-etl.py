@@ -162,28 +162,7 @@ class REDCapETL(object):
 
     def patch_dag(self):
 
-        # api_filter = self.config.get('redcap','api_filter', fallback=None)
-        # redcap_request_args = \
-        #     {
-        #         'token': self.redcap_api_token,
-        #         'content': 'record',
-        #         'format': 'json',
-        #         'type': 'flat',
-        #         'fields': ['study_id'],
-        #         'events': ['screening_arm_1'],
-        #         'exportDataAccessGroups': 'true',
-        #         'returnFormat': 'json',
-        #         'filterLogic': api_filter
-        #     }
-
-        # try:
-        #     response = requests.post(self.redcap_api_url, data=redcap_request_args)
-        # except requests.exceptions.RequestException as e:
-        #     raise SystemExit(e)
-
-        # dag_records = response.json()
-
-        # stuff dag in as additional field in eav
+        # Add dag in as additional field in eav
         for rec in self.dag_records:
             self.records.append(
                 dict(
@@ -289,8 +268,10 @@ class REDCapETL(object):
                     raise SystemExit(e)
 
                 r = requests.post(
-                    url=api_endpoint, json=result
-                )  # , headers={'x-api-token': api_token})
+                    url=api_endpoint,
+                    json=result
+                    # If incomplete chain, verify="fix-upload-cert.pem"
+                )
 
                 if not r:
                     logging.error(
@@ -333,6 +314,9 @@ class REDCapETL(object):
             # if ef_tup in nonphi_fields_dict or field_name == 'redcap_data_access_group':
             field_info = self.field_map_dict.get(field_name)
             if field_name == "redcap_data_access_group":
+                self.unique_fields.add(field_name)
+                new_records.append(rec)
+            elif field_name.endswith("_complete"):
                 self.unique_fields.add(field_name)
                 new_records.append(rec)
             elif not field_info:
@@ -394,23 +378,23 @@ class REDCapETL(object):
             self.transform_metadata[t2.data_namespace] = t2.get_transform_metadata()
 
         # self.transform_records.extend(TestCalcVariableTransform().process_records(self))
+
     def debug_pub(self):
-        #print(self.transform_records)
+        # print(self.transform_records)
         trans_data = {}
         for rec in self.transform_records:
-            rec_id = rec.get('record_id')
-            field_name = rec.get('field_name')
-            field_value = rec.get('field_value')
+            rec_id = rec.get("record_id")
+            field_name = rec.get("field_name")
+            field_value = rec.get("field_value")
             if rec_id not in trans_data:
                 trans_data[rec_id] = {}
-                trans_data[rec_id]['record_id'] = rec_id
+                trans_data[rec_id]["record_id"] = rec_id
             trans_data[rec_id][field_name] = field_value
         trans_list = []
         for rec_id, rec_data in trans_data.items():
             trans_list.append(rec_data)
         df = pd.DataFrame(trans_list)
         df.to_csv("debug-public.csv", index=False)
-
 
     def run(self):
         self.init()
