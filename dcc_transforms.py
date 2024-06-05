@@ -217,6 +217,7 @@ class CalcVariableTransform(REDCapETLTransform):
             "exp_pro_cat_most_recent": pa.Column(str),
             "exp_has_med_raas": pa.Column(str),
             "exp_aki_kdigo": pa.Column(str),
+            "adj_primary_categoryC": pa.Column(str),
         }
         if self.etl.redcap_project_type == "KPMP_MAIN":
             usecols += list(main_only_schema_cols.keys())
