@@ -1,4 +1,4 @@
-certifi==2023.11.17
+certifi==2024.7.4
 cfgv==3.3.1
 charset-normalizer==2.1.1
 click==8.1.3
